@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 from PIL import Image
+import time
 
 # Constants
 SAVE_ROOT = r"C:\Users\sakai\OneDrive\Desktop\Raspi5\pi-vital5"
@@ -100,4 +101,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    while True:
+        main()
+        time.sleep(3600)
