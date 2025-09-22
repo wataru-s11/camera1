@@ -5,32 +5,68 @@ import numpy as np
 from ultralytics import YOLO
 from PIL import Image
 
-# OneDrive環境変数からユーザごとのパスを自動取得
-od = os.environ.get("OneDrive")
-if od:
-    detect_root = Path(od) / "Desktop" / "Raspi5" / "face_annotation" / "runs" / "detect"
-else:
-    # fallback: sakai ユーザ直書き
-    detect_root = Path.home() / "OneDrive" / "Desktop" / "Raspi5" / "face_annotation" / "runs" / "detect"
+# Z:ドライブ優先で学習済みを探し、無ければ従来どおりOneDrive配下をglob探索
+preferred_weight_paths = [
+    Path(r"Z:\Raspi_face\face_detector\runs\train_face_gpu\weights\best.pt"),
+]
 
-if not detect_root.exists():
-    raise FileNotFoundError(
-        f"detect ルートが見つかりません: {detect_root}\n"
-        "OneDriveが同期中/オフライン(☁)なら右クリック→『このデバイスに常に保持する』でローカル化してください。"
+camera_id = os.environ.get("CAMERA_ID")
+if camera_id:
+    # カメラ名ごとの専用フォルダも任意で探索 (train_◯◯ や ◯◯ フォルダを想定)
+    camera_specific_paths = [
+        Path(fr"Z:\Raspi_face\face_detector\runs\{camera_id}\weights\best.pt"),
+        Path(fr"Z:\Raspi_face\face_detector\runs\train_{camera_id}\weights\best.pt"),
+    ]
+    for p in camera_specific_paths:
+        if p not in preferred_weight_paths:
+            preferred_weight_paths.append(p)
+
+model_path: str | None = None
+for weight_path in preferred_weight_paths:
+    if weight_path.exists():
+        model_path = str(weight_path)
+        print(f"[INFO] Using model from Z: share: {model_path}")
+        break
+
+if model_path is None:
+    # OneDrive環境変数からユーザごとのパスを自動取得
+    od = os.environ.get("OneDrive")
+    if od:
+        detect_root = Path(od) / "Desktop" / "Raspi5" / "face_annotation" / "runs" / "detect"
+    else:
+        # fallback: sakai ユーザ直書き
+        detect_root = Path.home() / "OneDrive" / "Desktop" / "Raspi5" / "face_annotation" / "runs" / "detect"
+
+    preferred_locations_msg = "\n".join(f"    - {p}" for p in preferred_weight_paths)
+    print(
+        "[INFO] Z:ドライブ上で学習済みが見つからなかったため、OneDriveフォルダを探索します:\n"
+        f"    OneDrive detect root: {detect_root}"
     )
 
-cands = sorted(
-    detect_root.glob("**/weights/best.pt"),
-    key=lambda p: p.stat().st_mtime,
-    reverse=True,
-)
-if not cands:
-    raise FileNotFoundError(
-        f"best.pt が見つかりません: {detect_root}\n"
-        "学習済みが別PC/別フォルダの可能性。場所を確認するか、学習を実行してください。"
-    )
+    if not detect_root.exists():
+        raise FileNotFoundError(
+            "YOLO学習済み重みが見つかりません。\n"
+            f"Z: ドライブで確認した場所:\n{preferred_locations_msg}\n"
+            f"OneDriveフォールバックも存在しません: {detect_root}\n"
+            "新しい best.pt を Z: ドライブ(推奨) または OneDrive の runs/detect 配下に配置してください。"
+        )
 
-model_path = str(cands[0])
+    cands = sorted(
+        detect_root.glob("**/weights/best.pt"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not cands:
+        raise FileNotFoundError(
+            "YOLO学習済み重みが見つかりません。\n"
+            f"Z: ドライブで確認した場所:\n{preferred_locations_msg}\n"
+            f"OneDrive配下でも best.pt が見つかりません: {detect_root}\n"
+            "新しい best.pt を Z: ドライブ(推奨) または OneDrive の runs/detect 配下に配置してください。"
+        )
+
+    model_path = str(cands[0])
+    print(f"[INFO] Using fallback model from OneDrive: {model_path}")
+
 print(f"[INFO] Using model: {model_path}")
 model = YOLO(model_path)
 
