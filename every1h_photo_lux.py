@@ -36,5 +36,5 @@ while True:
 
     print(f"[{now}] 撮影・照度保存完了")
 
-    # 6. 1時間待機 (3600秒)
-    time.sleep(3600)
+    # 6. 30分待機 (1800秒)
+    time.sleep(1800)
