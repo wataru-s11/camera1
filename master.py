@@ -1,5 +1,7 @@
 import os
+import logging
 from pathlib import Path
+from collections.abc import Iterable
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -67,6 +69,9 @@ if model_path is None:
     model_path = str(cands[0])
     print(f"[INFO] Using fallback model from OneDrive: {model_path}")
 
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
+
 print(f"[INFO] Using model: {model_path}")
 model = YOLO(model_path)
 
@@ -99,6 +104,57 @@ CAMERA_CROP_CONFIGS: dict[str, tuple[int, int, int, int]] = {
 }
 
 # ========= ユーティリティ =========
+DERIVED_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
+INPUT_DERIVED_KEYWORDS = ("full", "stage1", "firststage", "crop", "gamma")
+OUTPUT_DERIVED_KEYWORDS = ("full", "stage1", "firststage", "gamma")
+
+
+def cleanup_artifacts(paths: Iterable[Path | str]) -> None:
+    """Delete generated files while logging the outcome."""
+
+    seen: set[Path] = set()
+    for path in paths:
+        if path is None:
+            continue
+        file_path = Path(path)
+        if file_path in seen:
+            continue
+        seen.add(file_path)
+        if file_path.exists():
+            try:
+                file_path.unlink()
+                logger.info("Removed file: %s", file_path)
+            except Exception as exc:  # pragma: no cover - best effort cleanup
+                logger.warning("Failed to remove %s: %s", file_path, exc)
+
+
+def find_existing_derived_artifacts(base_name: str, img_path: Path) -> set[Path]:
+    """Locate known derivative files for removal when detection fails."""
+
+    derived: set[Path] = set()
+    prefixes = {img_path.stem}
+    if base_name:
+        prefixes.add(base_name)
+
+    search_specs = (
+        (img_path.parent, INPUT_DERIVED_KEYWORDS),
+        (output_folder, OUTPUT_DERIVED_KEYWORDS),
+    )
+
+    for directory, keywords in search_specs:
+        for prefix in prefixes:
+            for candidate in directory.glob(f"{prefix}*"):
+                if not candidate.is_file():
+                    continue
+                if candidate.suffix.lower() not in DERIVED_IMAGE_EXTENSIONS:
+                    continue
+                stem_lower = candidate.stem.lower()
+                if any(keyword in stem_lower for keyword in keywords):
+                    derived.add(candidate)
+
+    return derived
+
+
 def gamma_correct(img_bgr: np.ndarray, gamma: float) -> np.ndarray:
     if gamma == 1.0:
         return img_bgr
@@ -152,6 +208,7 @@ for fname in sorted(image_files):
     img_path = input_folder / fname
     base_name = fname.replace("image_", "").replace(".jpg", "").replace(".JPG", "")
     lux_path = input_folder / f"lux_{base_name}.txt"
+    artifacts_to_cleanup: set[Path] = {img_path}
 
     img = cv2.imread(str(img_path))
     if img is None:
@@ -171,15 +228,25 @@ for fname in sorted(image_files):
     full = gamma_correct(full, gamma)
 
     # YOLO推論はRGBが安定
-    pil_img = Image.fromarray(cv2.cvtColor(full, cv2.COLOR_BGR2RGB))
-    results = model(pil_img)
+    pil_img: Image.Image | None = None
+    try:
+        pil_img = Image.fromarray(cv2.cvtColor(full, cv2.COLOR_BGR2RGB))
+        results = model(pil_img)
+    finally:
+        if pil_img is not None:
+            pil_img.close()
+
     if not results:
         print(f"[INFO] 推論結果なし: {fname}")
+        artifacts_to_cleanup.update(find_existing_derived_artifacts(base_name, img_path))
+        cleanup_artifacts(artifacts_to_cleanup)
         continue
 
     r = results[0]
     if getattr(r, "boxes", None) is None or len(r.boxes) == 0:
         print(f"[INFO] 検出なし: {fname}")
+        artifacts_to_cleanup.update(find_existing_derived_artifacts(base_name, img_path))
+        cleanup_artifacts(artifacts_to_cleanup)
         continue
 
     # 各検出ボックスでクロップ
