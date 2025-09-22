@@ -48,14 +48,18 @@ DEFAULT_CROP = (1098, 50, 1843, 1789)
 # ここにカメラごとのクロップ設定を追加することで、
 # 複数カメラでも処理を共通化できる
 CAMERA_CROP_CONFIGS: dict[str, tuple[int, int, int, int]] = {
-    "pi-vital2": DEFAULT_CROP,
-    "pi2": DEFAULT_CROP,
-    "pi-vital3": DEFAULT_CROP,
-    "pi3": DEFAULT_CROP,
-    "pi-vital4": DEFAULT_CROP,
-    "pi4": DEFAULT_CROP,
-    "pi-vital5": DEFAULT_CROP,
-    "pi5": DEFAULT_CROP,
+    # pi-vital2/pi2
+    "pi-vital2": (1098, 50, 1843, 1789),
+    "pi2": (1098, 50, 1843, 1789),
+    # pi-vital3/pi3
+    "pi-vital3": (748, 1008, 1533, 1454),
+    "pi3": (748, 1008, 1533, 1454),
+    # pi-vital4/pi4
+    "pi-vital4": (1918, 716, 1800, 1641),
+    "pi4": (1918, 716, 1800, 1641),
+    # pi-vital5/pi5
+    "pi-vital5": (475, 43, 2728, 2383),
+    "pi5": (475, 43, 2728, 2383),
 }
 
 # ========= ユーティリティ =========
