@@ -43,7 +43,20 @@ if not input_folder.exists():
     raise FileNotFoundError(f"入力フォルダが見つかりません: {input_folder}\nZ: ドライブ割当やNAS接続を確認してください。")
 
 # 全体クロップ範囲（x, y, w, h）
-x, y, w, h = 1098, 50, 1843, 1789
+DEFAULT_CROP = (1098, 50, 1843, 1789)
+
+# ここにカメラごとのクロップ設定を追加することで、
+# 複数カメラでも処理を共通化できる
+CAMERA_CROP_CONFIGS: dict[str, tuple[int, int, int, int]] = {
+    "pi-vital2": DEFAULT_CROP,
+    "pi2": DEFAULT_CROP,
+    "pi-vital3": DEFAULT_CROP,
+    "pi3": DEFAULT_CROP,
+    "pi-vital4": DEFAULT_CROP,
+    "pi4": DEFAULT_CROP,
+    "pi-vital5": DEFAULT_CROP,
+    "pi5": DEFAULT_CROP,
+}
 
 # ========= ユーティリティ =========
 def gamma_correct(img_bgr: np.ndarray, gamma: float) -> np.ndarray:
@@ -63,6 +76,32 @@ def safe_crop(img: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> np.ndarray
         return None
     return img[y1:y2, x1:x2]
 
+
+def resolve_crop_rect(path: Path) -> tuple[int, int, int, int]:
+    path_lower = str(path).lower()
+    for key, rect in CAMERA_CROP_CONFIGS.items():
+        if key in path_lower:
+            return rect
+    return DEFAULT_CROP
+
+
+def determine_gamma_from_lux(lux_path: Path, base_name: str) -> float:
+    gamma = 1.0
+    if lux_path.exists():
+        try:
+            lux_value = float(lux_path.read_text(encoding="utf-8").strip())
+            if lux_value < 30:
+                gamma = 1.5
+            elif lux_value < 80:
+                gamma = 1.2
+            elif lux_value > 120:
+                gamma = 0.9
+        except Exception as e:
+            print(f"[WARN] 照度補正エラー({base_name}): {e}")
+    else:
+        print(f"[INFO] {base_name}: lux file not found → 補正なし")
+    return gamma
+
 # ========= 画像一覧 =========
 image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(".jpg")]
 if not image_files:
@@ -79,11 +118,17 @@ for fname in sorted(image_files):
         print(f"[WARN] 読み込み失敗: {img_path}")
         continue
 
+    crop_x, crop_y, crop_w, crop_h = resolve_crop_rect(img_path)
+
     # 全体クロップ（はみ出しガード）
-    full = safe_crop(img, x, y, x + w, y + h)
+    full = safe_crop(img, crop_x, crop_y, crop_x + crop_w, crop_y + crop_h)
     if full is None:
         print(f"[WARN] 全体クロップ範囲が不正: {fname}")
         continue
+
+    # 照度ファイル→ガンマ決定し、フレーム全体に一括適用
+    gamma = determine_gamma_from_lux(lux_path, base_name)
+    full = gamma_correct(full, gamma)
 
     # YOLO推論はRGBが安定
     pil_img = Image.fromarray(cv2.cvtColor(full, cv2.COLOR_BGR2RGB))
@@ -97,22 +142,6 @@ for fname in sorted(image_files):
         print(f"[INFO] 検出なし: {fname}")
         continue
 
-    # 照度ファイル→ガンマ決定
-    gamma = 1.0
-    if lux_path.exists():
-        try:
-            lux_value = float(lux_path.read_text(encoding="utf-8").strip())
-            if lux_value < 30:
-                gamma = 1.5
-            elif lux_value < 80:
-                gamma = 1.2
-            elif lux_value > 120:
-                gamma = 0.9
-        except Exception as e:
-            print(f"[WARN] 照度補正エラー({base_name}): {e}")
-    else:
-        print(f"[INFO] {base_name}: lux file not found → 補正なし")
-
     # 各検出ボックスでクロップ
     boxes_xyxy = r.boxes.xyxy.cpu().numpy()
     confs = r.boxes.conf.cpu().numpy() if getattr(r.boxes, "conf", None) is not None else [None]*len(boxes_xyxy)
@@ -122,9 +151,6 @@ for fname in sorted(image_files):
         face = safe_crop(full, x1, y1, x2, y2)
         if face is None:
             continue
-
-        # 照度に応じたガンマ補正
-        face = gamma_correct(face, gamma)
 
         # 保存（信頼度も付与）
         conf_tag = f"_{conf:.2f}" if conf is not None else ""
