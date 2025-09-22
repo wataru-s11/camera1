@@ -1,40 +1,109 @@
-import subprocess
-from datetime import datetime
-import requests
 import os
+import subprocess
 import time
+from datetime import datetime
+from typing import Optional
 
-# 保存フォルダ
-save_folder = r"Z:\Raspi_face\pi2\20250918"
-os.makedirs(save_folder, exist_ok=True)
-# ESP32 IP
-esp32_ip = "http://192.168.1.213"
+import requests
 
-while True:
-    # 1. 日時付きファイル名を作成
-    now = datetime.now().strftime("%Y%m%d_%H%M")
-    filename = f"image_{now}.jpg"
-    lux_filename = f"lux_{now}.txt"
 
-    # 2. 照度取得
+CYCLE_INTERVAL_SECONDS = 1800
+
+CAMERA_CONFIGS = [
+    {
+        "name": "pi-vital2",
+        "pi_hostname": "pi-vital2.local",
+        "save_folder": r"Z:\\Raspi_face\\pi2\\20250918",
+        "esp32_ip": "http://192.168.1.213",
+    },
+    {
+        "name": "pi-vital3",
+        "pi_hostname": "pi-vital3.local",
+        "save_folder": r"Z:\\Raspi_face\\pi3\\20250918",
+        "esp32_ip": "http://192.168.1.214",
+    },
+    {
+        "name": "pi-vital4",
+        "pi_hostname": "pi-vital4.local",
+        "save_folder": r"Z:\\Raspi_face\\pi4\\20250918",
+        "esp32_ip": "http://192.168.1.215",
+    },
+    {
+        "name": "pi-vital5",
+        "pi_hostname": "pi-vital5.local",
+        "save_folder": r"Z:\\Raspi_face\\pi5\\20250918",
+        "esp32_ip": "http://192.168.1.216",
+    },
+]
+
+
+def capture_and_transfer(
+    save_folder: str,
+    esp32_endpoint: str,
+    pi_hostname: str,
+    *,
+    camera_name: Optional[str] = None,
+) -> None:
+    """Capture an image and lux reading, then transfer the image to the save folder."""
+    label = camera_name or pi_hostname
+
+    os.makedirs(save_folder, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    image_filename = f"image_{timestamp}.jpg"
+    lux_filename = f"lux_{timestamp}.txt"
+
+    lux_path = os.path.join(save_folder, lux_filename)
+    image_path = os.path.join(save_folder, image_filename)
+
     try:
-        lux = requests.get(esp32_ip, timeout=5).text
-    except Exception as e:
-        lux = f"Error: {e}"
+        response = requests.get(esp32_endpoint, timeout=5)
+        response.raise_for_status()
+        lux_text = response.text.strip()
+    except Exception as exc:
+        lux_text = f"Error: {exc}"
+        print(f"[WARN] {label}: Failed to fetch lux value ({exc})")
 
-    # 3. 照度を保存
-    with open(os.path.join(save_folder, lux_filename), "w") as f:
-        f.write(lux)
+    with open(lux_path, "w", encoding="utf-8") as lux_file:
+        lux_file.write(lux_text)
 
-    # 4. 撮影
-    ssh_command = f'ssh sakai@pi-vital2.local "libcamera-jpeg -o /home/sakai/{filename}"'
-    subprocess.run(ssh_command, shell=True)
+    ssh_command = f'ssh sakai@{pi_hostname} "libcamera-jpeg -o /home/sakai/{image_filename}"'
+    scp_command = f'scp sakai@{pi_hostname}:/home/sakai/{image_filename} "{image_path}"'
 
-    # 5. 画像をPCへ転送
-    scp_command = f'scp sakai@pi-vital2.local:/home/sakai/{filename} "{os.path.join(save_folder, filename)}"'
-    subprocess.run(scp_command, shell=True)
+    try:
+        subprocess.run(ssh_command, shell=True, check=True)
+        subprocess.run(scp_command, shell=True, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"{label}: Command failed (exit code {exc.returncode}): {exc.cmd}"
+        ) from exc
 
-    print(f"[{now}] 撮影・照度保存完了")
+    print(f"[INFO] {label}: Capture complete ({timestamp})")
 
-    # 6. 30分待機 (1800秒)
-    time.sleep(1800)
+
+def main() -> None:
+    for config in CAMERA_CONFIGS:
+        os.makedirs(config["save_folder"], exist_ok=True)
+
+    while True:
+        cycle_started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[INFO] Capture cycle started at {cycle_started}")
+
+        for config in CAMERA_CONFIGS:
+            name = config["name"]
+            try:
+                capture_and_transfer(
+                    config["save_folder"],
+                    config["esp32_ip"],
+                    config["pi_hostname"],
+                    camera_name=name,
+                )
+            except Exception as exc:
+                print(f"[ERROR] {name}: {exc}")
+
+        print(f"[INFO] Cycle finished. Sleeping for {CYCLE_INTERVAL_SECONDS} seconds.")
+        time.sleep(CYCLE_INTERVAL_SECONDS)
+
+
+if __name__ == "__main__":
+    main()
