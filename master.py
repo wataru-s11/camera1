@@ -80,6 +80,21 @@ input_folder = Path(r"C:\Users\sakai\OneDrive\Desktop\Raspi5\pi-vital2\20250728_
 output_folder = Path(r"Z:\Raspi_face\cropped_face")
 output_folder.mkdir(parents=True, exist_ok=True)
 
+# Review destinations
+REVIEW_CATEGORIES = ("normal", "cyanosis", "controversial", "delete")
+REVIEW_WINDOW_NAME = "Face Review"
+REVIEW_KEY_BINDINGS = {
+    "n": "normal",
+    "c": "cyanosis",
+    "v": "controversial",
+    "d": "delete",
+}
+REVIEW_QUIT_KEYS = {"q"}
+review_destinations = {category: output_folder / category for category in REVIEW_CATEGORIES}
+for destination in review_destinations.values():
+    destination.mkdir(parents=True, exist_ok=True)
+_review_window_initialized = False
+
 if not input_folder.exists():
     raise FileNotFoundError(f"入力フォルダが見つかりません: {input_folder}\nZ: ドライブ割当やNAS接続を確認してください。")
 
@@ -198,71 +213,176 @@ def determine_gamma_from_lux(lux_path: Path, base_name: str) -> float:
         print(f"[INFO] {base_name}: lux file not found → 補正なし")
     return gamma
 
+
+class ReviewAborted(Exception):
+    """Raised when an operator chooses to abort the interactive review."""
+
+
+def _ensure_review_window() -> None:
+    global _review_window_initialized
+    if not _review_window_initialized:
+        cv2.namedWindow(REVIEW_WINDOW_NAME, cv2.WINDOW_NORMAL)
+        _review_window_initialized = True
+
+
+def _close_review_window() -> None:
+    global _review_window_initialized
+    if _review_window_initialized:
+        cv2.destroyWindow(REVIEW_WINDOW_NAME)
+        cv2.waitKey(1)
+        _review_window_initialized = False
+
+
+def prompt_face_review(
+    face: np.ndarray,
+    base_name: str,
+    idx: int,
+    conf: float | None,
+) -> str:
+    """Show a face crop and wait for operator classification."""
+
+    _ensure_review_window()
+
+    instruction_text = "  ".join(
+        f"[{key}] {label}" for key, label in REVIEW_KEY_BINDINGS.items()
+    ) + "  [q] quit"
+
+    while True:
+        display_img = face.copy()
+        overlay_lines = [
+            f"{base_name} face#{idx}",
+            f"confidence: {conf:.2f}" if conf is not None else "confidence: n/a",
+            instruction_text,
+        ]
+        y = 30
+        for line in overlay_lines:
+            cv2.putText(
+                display_img,
+                line,
+                (10, y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 0),
+                2,
+                cv2.LINE_AA,
+            )
+            y += 25
+
+        cv2.imshow(REVIEW_WINDOW_NAME, display_img)
+        key = cv2.waitKey(0)
+        if key < 0:
+            continue
+
+        key = key & 0xFF
+        if key == 27:  # ESC
+            raise ReviewAborted
+
+        key_char = chr(key).lower()
+        if key_char in REVIEW_QUIT_KEYS:
+            raise ReviewAborted
+        if key_char in REVIEW_KEY_BINDINGS:
+            return REVIEW_KEY_BINDINGS[key_char]
+
+        print(
+            f"[INFO] 未対応のキー: '{key_char}'. 指示に従ってください → {instruction_text}"
+        )
+
 # ========= 画像一覧 =========
 image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(".jpg")]
 if not image_files:
     print(f"[WARN] JPGが見つかりません: {input_folder}")
 
 # ========= メイン処理 =========
-for fname in sorted(image_files):
-    img_path = input_folder / fname
-    base_name = fname.replace("image_", "").replace(".jpg", "").replace(".JPG", "")
-    lux_path = input_folder / f"lux_{base_name}.txt"
-    artifacts_to_cleanup: set[Path] = {img_path}
+if image_files:
+    instruction_line = " / ".join(
+        f"{key}:{label}" for key, label in REVIEW_KEY_BINDINGS.items()
+    )
+    print(f"[INFO] 分類キー → {instruction_line} / q:quit")
 
-    img = cv2.imread(str(img_path))
-    if img is None:
-        print(f"[WARN] 読み込み失敗: {img_path}")
-        continue
+review_aborted = False
 
-    crop_x, crop_y, crop_w, crop_h = resolve_crop_rect(img_path)
+try:
+    for fname in sorted(image_files):
+        img_path = input_folder / fname
+        base_name = (
+            fname.replace("image_", "")
+            .replace(".jpg", "")
+            .replace(".JPG", "")
+        )
+        lux_path = input_folder / f"lux_{base_name}.txt"
+        artifacts_to_cleanup: set[Path] = {img_path}
 
-    # 全体クロップ（はみ出しガード）
-    full = safe_crop(img, crop_x, crop_y, crop_x + crop_w, crop_y + crop_h)
-    if full is None:
-        print(f"[WARN] 全体クロップ範囲が不正: {fname}")
-        continue
-
-    # 照度ファイル→ガンマ決定し、フレーム全体に一括適用
-    gamma = determine_gamma_from_lux(lux_path, base_name)
-    full = gamma_correct(full, gamma)
-
-    # YOLO推論はRGBが安定
-    pil_img: Image.Image | None = None
-    try:
-        pil_img = Image.fromarray(cv2.cvtColor(full, cv2.COLOR_BGR2RGB))
-        results = model(pil_img)
-    finally:
-        if pil_img is not None:
-            pil_img.close()
-
-    if not results:
-        print(f"[INFO] 推論結果なし: {fname}")
-        artifacts_to_cleanup.update(find_existing_derived_artifacts(base_name, img_path))
-        cleanup_artifacts(artifacts_to_cleanup)
-        continue
-
-    r = results[0]
-    if getattr(r, "boxes", None) is None or len(r.boxes) == 0:
-        print(f"[INFO] 検出なし: {fname}")
-        artifacts_to_cleanup.update(find_existing_derived_artifacts(base_name, img_path))
-        cleanup_artifacts(artifacts_to_cleanup)
-        continue
-
-    # 各検出ボックスでクロップ
-    boxes_xyxy = r.boxes.xyxy.cpu().numpy()
-    confs = r.boxes.conf.cpu().numpy() if getattr(r.boxes, "conf", None) is not None else [None]*len(boxes_xyxy)
-
-    for idx, (box, conf) in enumerate(zip(boxes_xyxy, confs)):
-        x1, y1, x2, y2 = map(int, box)
-        face = safe_crop(full, x1, y1, x2, y2)
-        if face is None:
+        img = cv2.imread(str(img_path))
+        if img is None:
+            print(f"[WARN] 読み込み失敗: {img_path}")
             continue
 
-        # 保存（信頼度も付与）
-        conf_tag = f"_{conf:.2f}" if conf is not None else ""
-        save_path = output_folder / f"{base_name}_face{idx}{conf_tag}.jpg"
-        cv2.imwrite(str(save_path), face)
-        print(f"[SAVE] {save_path}")
+        crop_x, crop_y, crop_w, crop_h = resolve_crop_rect(img_path)
 
-print("=== 全処理終了 ===")
+        # 全体クロップ（はみ出しガード）
+        full = safe_crop(img, crop_x, crop_y, crop_x + crop_w, crop_y + crop_h)
+        if full is None:
+            print(f"[WARN] 全体クロップ範囲が不正: {fname}")
+            continue
+
+        # 照度ファイル→ガンマ決定し、フレーム全体に一括適用
+        gamma = determine_gamma_from_lux(lux_path, base_name)
+        full = gamma_correct(full, gamma)
+
+        # YOLO推論はRGBが安定
+        pil_img: Image.Image | None = None
+        try:
+            pil_img = Image.fromarray(cv2.cvtColor(full, cv2.COLOR_BGR2RGB))
+            results = model(pil_img)
+        finally:
+            if pil_img is not None:
+                pil_img.close()
+
+        if not results:
+            print(f"[INFO] 推論結果なし: {fname}")
+            artifacts_to_cleanup.update(find_existing_derived_artifacts(base_name, img_path))
+            cleanup_artifacts(artifacts_to_cleanup)
+            continue
+
+        r = results[0]
+        if getattr(r, "boxes", None) is None or len(r.boxes) == 0:
+            print(f"[INFO] 検出なし: {fname}")
+            artifacts_to_cleanup.update(find_existing_derived_artifacts(base_name, img_path))
+            cleanup_artifacts(artifacts_to_cleanup)
+            continue
+
+        # 各検出ボックスでクロップ
+        boxes_xyxy = r.boxes.xyxy.cpu().numpy()
+        confs = (
+            r.boxes.conf.cpu().numpy()
+            if getattr(r.boxes, "conf", None) is not None
+            else [None] * len(boxes_xyxy)
+        )
+
+        for idx, (box, conf) in enumerate(zip(boxes_xyxy, confs)):
+            x1, y1, x2, y2 = map(int, box)
+            face = safe_crop(full, x1, y1, x2, y2)
+            if face is None:
+                continue
+
+            try:
+                category = prompt_face_review(face, base_name, idx, conf)
+            except ReviewAborted:
+                review_aborted = True
+                break
+
+            conf_tag = f"_{conf:.2f}" if conf is not None else ""
+            dest_dir = review_destinations[category]
+            save_path = dest_dir / f"{base_name}_face{idx}{conf_tag}.jpg"
+            cv2.imwrite(str(save_path), face)
+            print(f"[REVIEW] {category}: {save_path}")
+
+        if review_aborted:
+            break
+    else:
+        print("=== 全処理終了 ===")
+finally:
+    _close_review_window()
+
+if review_aborted:
+    print("[INFO] オペレータがレビューを中断しました。")
