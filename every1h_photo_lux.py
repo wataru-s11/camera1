@@ -1,6 +1,7 @@
 import os
 import subprocess
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
@@ -37,14 +38,23 @@ CAMERA_CONFIGS = [
 ]
 
 
+@dataclass(slots=True)
+class CaptureResult:
+    """Details about a capture cycle for a single camera."""
+
+    image_path: str
+    lux_path: str
+    timestamp: str
+
+
 def capture_and_transfer(
     save_folder: str,
     esp32_endpoint: str,
     pi_hostname: str,
     *,
     camera_name: Optional[str] = None,
-) -> None:
-    """Capture an image and lux reading, then transfer the image to the save folder."""
+) -> CaptureResult:
+    """Capture an image and lux reading, then transfer the assets to ``save_folder``."""
     label = camera_name or pi_hostname
 
     os.makedirs(save_folder, exist_ok=True)
@@ -79,6 +89,7 @@ def capture_and_transfer(
         ) from exc
 
     print(f"[INFO] {label}: Capture complete ({timestamp})")
+    return CaptureResult(image_path=image_path, lux_path=lux_path, timestamp=timestamp)
 
 
 def main() -> None:
