@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import cv2
@@ -58,7 +58,9 @@ class ReviewManager:
 
     output_root: Path
     categories: Sequence[str] = REVIEW_CATEGORIES
-    key_bindings: Mapping[str, str] = REVIEW_KEY_BINDINGS
+    key_bindings: Mapping[str, str] = field(
+        default_factory=lambda: dict(REVIEW_KEY_BINDINGS)
+    )
     quit_keys: Sequence[str] = tuple(REVIEW_QUIT_KEYS)
     window_name: str = REVIEW_WINDOW_NAME
 
