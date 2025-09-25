@@ -18,7 +18,10 @@ from processing_pipeline import (
 )
 
 # 既定の入出力パス
-DEFAULT_INPUT_ROOT = Path(r"C:\Users\sakai\OneDrive\Desktop\Raspi5\pi-vital2")
+DEFAULT_INPUT_ROOT_CANDIDATES: tuple[Path, ...] = (
+    Path(r"Z:\\Raspi_face\\pi-vital2"),
+    Path(r"C:\\Users\\sakai\\OneDrive\\Desktop\\Raspi5\\pi-vital2"),
+)
 DEFAULT_OUTPUT_FOLDER = Path(r"Z:\Raspi_face\cropped_face")
 
 
@@ -39,45 +42,45 @@ def _resolve_input_folder(override: Path | None = None) -> Path:
     if env_input:
         return Path(env_input)
 
-    if not DEFAULT_INPUT_ROOT.exists():
-        raise FileNotFoundError(
-            "既定の入力ルートが見つかりません。REVIEW_INPUT_FOLDER を設定するか、"
-            f"{DEFAULT_INPUT_ROOT} に処理済みフォルダを配置してください。"
+    logger = logging.getLogger(__name__)
+
+    for default_root in DEFAULT_INPUT_ROOT_CANDIDATES:
+        if not default_root.exists():
+            continue
+
+        today_suffix = datetime.now().strftime("%Y%m%d_processed")
+        today_candidate = default_root / today_suffix
+        if today_candidate.is_dir():
+            return today_candidate
+
+        processed_dirs = sorted(
+            (path for path in default_root.glob("*_processed") if path.is_dir()),
+            key=lambda path: path.name,
+            reverse=True,
         )
+        if processed_dirs:
+            logger.info("最新の日付フォルダを使用します: %s", processed_dirs[0])
+            return processed_dirs[0]
 
-    today_suffix = datetime.now().strftime("%Y%m%d_processed")
-    today_candidate = DEFAULT_INPUT_ROOT / today_suffix
-    if today_candidate.is_dir():
-        return today_candidate
-
-    processed_dirs = sorted(
-        (path for path in DEFAULT_INPUT_ROOT.glob("*_processed") if path.is_dir()),
-        key=lambda path: path.name,
-        reverse=True,
-    )
-    if processed_dirs:
-        logging.getLogger(__name__).info(
-            "最新の日付フォルダを使用します: %s", processed_dirs[0]
+        dated_dirs = sorted(
+            (
+                path
+                for path in default_root.iterdir()
+                if path.is_dir() and path.name[:8].isdigit()
+            ),
+            key=lambda path: path.name,
+            reverse=True,
         )
-        return processed_dirs[0]
+        if dated_dirs:
+            logger.warning(
+                "*_processed フォルダが見つからないため %s を使用します", dated_dirs[0]
+            )
+            return dated_dirs[0]
 
-    dated_dirs = sorted(
-        (
-            path
-            for path in DEFAULT_INPUT_ROOT.iterdir()
-            if path.is_dir() and path.name[:8].isdigit()
-        ),
-        key=lambda path: path.name,
-        reverse=True,
-    )
-    if dated_dirs:
-        logging.getLogger(__name__).warning(
-            "*_processed フォルダが見つからないため %s を使用します", dated_dirs[0]
-        )
-        return dated_dirs[0]
-
+    candidates = "\n".join(str(path) for path in DEFAULT_INPUT_ROOT_CANDIDATES)
     raise FileNotFoundError(
-        f"入力フォルダが見つかりません。REVIEW_INPUT_FOLDER を設定するか、{DEFAULT_INPUT_ROOT} に 日付フォルダ (例: 20250101_processed) を用意してください。"
+        "入力フォルダが見つかりません。REVIEW_INPUT_FOLDER を設定するか、以下の候補のいずれかに日付フォルダ (例: 20250101_processed) を用意してください:\n"
+        f"{candidates}"
     )
 
 
