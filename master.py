@@ -32,6 +32,8 @@ def _resolve_input_folder() -> Path:
 
     if not DEFAULT_INPUT_ROOT.exists():
         raise FileNotFoundError(
+            "既定の入力ルートが見つかりません。REVIEW_INPUT_FOLDER を設定するか、"
+            f"{DEFAULT_INPUT_ROOT} に処理済みフォルダを配置してください。"
         )
 
     today_suffix = datetime.now().strftime("%Y%m%d_processed")
