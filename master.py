@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 
 from processing_pipeline import (
@@ -16,27 +17,56 @@ from processing_pipeline import (
 )
 
 # 既定の入出力パス
-DEFAULT_INPUT_FOLDER = Path(
-    r"C:\Users\sakai\OneDrive\Desktop\Raspi5\pi-vital2\20250728_processed"
-)
+DEFAULT_INPUT_ROOT = Path(r"C:\Users\sakai\OneDrive\Desktop\Raspi5\pi-vital2")
 DEFAULT_OUTPUT_FOLDER = Path(r"Z:\Raspi_face\cropped_face")
 
-INPUT_FOLDER = Path(os.environ.get("REVIEW_INPUT_FOLDER", str(DEFAULT_INPUT_FOLDER)))
-OUTPUT_FOLDER = Path(os.environ.get("REVIEW_OUTPUT_ROOT", str(DEFAULT_OUTPUT_FOLDER)))
+
+def _resolve_output_folder() -> Path:
+    return Path(os.environ.get("REVIEW_OUTPUT_ROOT", str(DEFAULT_OUTPUT_FOLDER)))
+
+
+def _resolve_input_folder() -> Path:
+    env_input = os.environ.get("REVIEW_INPUT_FOLDER")
+    if env_input:
+        return Path(env_input)
+
+    today_suffix = datetime.now().strftime("%Y%m%d_processed")
+    today_candidate = DEFAULT_INPUT_ROOT / today_suffix
+    if today_candidate.is_dir():
+        return today_candidate
+
+    processed_dirs = sorted(
+        (path for path in DEFAULT_INPUT_ROOT.glob("*_processed") if path.is_dir()),
+        key=lambda path: path.name,
+        reverse=True,
+    )
+    if processed_dirs:
+        logging.getLogger(__name__).info(
+            "最新の日付フォルダを使用します: %s", processed_dirs[0]
+        )
+        return processed_dirs[0]
+
+    raise FileNotFoundError(
+        "入力フォルダが見つかりません。REVIEW_INPUT_FOLDER を設定するか、"
+        f"{DEFAULT_INPUT_ROOT} に *_processed フォルダを作成してください。"
+    )
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
+    input_folder = _resolve_input_folder()
+    output_folder = _resolve_output_folder()
+
     camera_id = os.environ.get("CAMERA_ID")
     model, _ = load_yolo_model(camera_id)
 
-    review_manager = ReviewManager(OUTPUT_FOLDER)
+    review_manager = ReviewManager(output_folder)
     review_aborted = False
 
     try:
         process_folder(
-            INPUT_FOLDER,
+            input_folder,
             model=model,
             review_manager=review_manager,
             camera_crop_configs=CAMERA_CROP_CONFIGS,
