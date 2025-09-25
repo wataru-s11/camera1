@@ -8,7 +8,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from every1h_photo_lux import CAMERA_CONFIGS, capture_and_transfer
+from every1h_photo_lux import (
+    CAMERA_CONFIGS,
+    capture_and_transfer,
+    ensure_save_directories,
+)
 from processing_pipeline import (
     CAMERA_CROP_CONFIGS,
     DEFAULT_CROP,
@@ -18,23 +22,41 @@ from processing_pipeline import (
     process_image,
 )
 
-CYCLE_INTERVAL_SECONDS = 1800  # 30 minutes
-OUTPUT_ROOT = Path(r"Z:\Raspi_face\cropped_face")
+DEFAULT_OUTPUT_ROOT = Path(r"Z:\Raspi_face\cropped_face")
+
+
+def _env_interval(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if not value:
+        return default
+
+    try:
+        seconds = int(value)
+    except ValueError:
+        print(f"[WARN] Invalid {name} value: {value!r}. Using default {default} seconds.")
+        return default
+
+    if seconds <= 0:
+        print(f"[WARN] {name} must be positive. Using default {default} seconds.")
+        return default
+
+    return seconds
+
+
+CYCLE_INTERVAL_SECONDS = _env_interval("PIPELINE_INTERVAL_SECONDS", 1800)
+OUTPUT_ROOT = Path(os.environ.get("PIPELINE_OUTPUT_ROOT", str(DEFAULT_OUTPUT_ROOT)))
 
 
 def run_cycle(model: "YOLO", review_manager: ReviewManager) -> None:
-    cycle_started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[INFO] Pipeline cycle started at {cycle_started}")
+    cycle_started = datetime.now()
+    print(f"[INFO] Pipeline cycle started at {cycle_started:%Y-%m-%d %H:%M:%S}")
+
+    ensure_save_directories(CAMERA_CONFIGS, cycle_started)
 
     for config in CAMERA_CONFIGS:
-        name = config["name"]
+        name = config.label()
         try:
-            result = capture_and_transfer(
-                config["save_folder"],
-                config["esp32_ip"],
-                config["pi_hostname"],
-                camera_name=name,
-            )
+            result = capture_and_transfer(config, cycle_time=cycle_started)
         except Exception as exc:
             print(f"[ERROR] {name}: {exc}")
             continue

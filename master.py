@@ -16,8 +16,13 @@ from processing_pipeline import (
 )
 
 # 既定の入出力パス
-INPUT_FOLDER = Path(r"C:\Users\sakai\OneDrive\Desktop\Raspi5\pi-vital2\20250728_processed")
-OUTPUT_FOLDER = Path(r"Z:\Raspi_face\cropped_face")
+DEFAULT_INPUT_FOLDER = Path(
+    r"C:\Users\sakai\OneDrive\Desktop\Raspi5\pi-vital2\20250728_processed"
+)
+DEFAULT_OUTPUT_FOLDER = Path(r"Z:\Raspi_face\cropped_face")
+
+INPUT_FOLDER = Path(os.environ.get("REVIEW_INPUT_FOLDER", str(DEFAULT_INPUT_FOLDER)))
+OUTPUT_FOLDER = Path(os.environ.get("REVIEW_OUTPUT_ROOT", str(DEFAULT_OUTPUT_FOLDER)))
 
 
 def main() -> None:
