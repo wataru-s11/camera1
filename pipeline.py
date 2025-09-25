@@ -47,7 +47,12 @@ CYCLE_INTERVAL_SECONDS = _env_interval("PIPELINE_INTERVAL_SECONDS", 1800)
 OUTPUT_ROOT = Path(os.environ.get("PIPELINE_OUTPUT_ROOT", str(DEFAULT_OUTPUT_ROOT)))
 
 
-def run_cycle(model: "YOLO", review_manager: ReviewManager) -> None:
+def run_cycle(
+    model: "YOLO",
+    review_manager: ReviewManager,
+    *,
+    announce_sleep: bool = True,
+) -> None:
     cycle_started = datetime.now()
     print(f"[INFO] Pipeline cycle started at {cycle_started:%Y-%m-%d %H:%M:%S}")
 
@@ -77,7 +82,8 @@ def run_cycle(model: "YOLO", review_manager: ReviewManager) -> None:
         except Exception as exc:
             print(f"[ERROR] {name}: 処理中にエラーが発生しました: {exc}")
 
-    print(f"[INFO] Cycle finished. Sleeping for {CYCLE_INTERVAL_SECONDS} seconds.")
+    if announce_sleep:
+        print(f"[INFO] Cycle finished. Sleeping for {CYCLE_INTERVAL_SECONDS} seconds.")
 
 
 def main() -> None:

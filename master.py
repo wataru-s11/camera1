@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
+from pipeline import CYCLE_INTERVAL_SECONDS, run_cycle
 from processing_pipeline import (
     CAMERA_CROP_CONFIGS,
     DEFAULT_CROP,
@@ -125,6 +127,15 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--mode",
+        choices=("pipeline", "review"),
+        default="pipeline",
+        help=(
+            "pipeline: 全自動で撮影からレビューまで実行します / "
+            "review: 既存の処理済みフォルダのみレビューします"
+        ),
+    )
+    parser.add_argument(
         "--input",
         type=Path,
         help="レビュー対象となる処理済み画像フォルダのパス。",
@@ -142,9 +153,16 @@ def main() -> None:
         type=Path,
         help="レビュー結果を書き出すフォルダのパス。",
     )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help=(
+            "pipelineモード時に1サイクルのみ実行します。"
+            "指定しない場合は約30分間隔(PIPELINE_INTERVAL_SECONDSで変更可)で繰り返します。"
+        ),
+    )
     args = parser.parse_args()
 
-    input_folder = _resolve_input_folder(args.input, args.input_root)
     output_folder = _resolve_output_folder(args.output)
 
     camera_id = os.environ.get("CAMERA_ID")
@@ -152,6 +170,33 @@ def main() -> None:
 
     review_manager = ReviewManager(output_folder)
     review_aborted = False
+
+    if args.mode == "pipeline":
+        continuous = not args.once
+        try:
+            while True:
+                try:
+                    run_cycle(
+                        model,
+                        review_manager,
+                        announce_sleep=continuous,
+                    )
+                except ReviewAborted:
+                    review_aborted = True
+                    break
+
+                if args.once:
+                    break
+
+                time.sleep(CYCLE_INTERVAL_SECONDS)
+        finally:
+            review_manager.close()
+
+        if review_aborted:
+            print("[INFO] オペレータがレビューを中断しました。")
+        return
+
+    input_folder = _resolve_input_folder(args.input, args.input_root)
 
     try:
         process_folder(

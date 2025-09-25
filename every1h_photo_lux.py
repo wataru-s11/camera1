@@ -110,19 +110,19 @@ CAMERA_CONFIGS: tuple[CameraConfig, ...] = (
         name="pi-vital3",
         pi_hostname="pi-vital3.local",
         save_root=_z_drive_path("pi3"),
-        esp32_ip="http://192.168.1.214",
+        esp32_ip="http://192.168.1.183",
     ),
     CameraConfig(
         name="pi-vital4",
         pi_hostname="pi-vital4.local",
         save_root=_z_drive_path("pi4"),
-        esp32_ip="http://192.168.1.215",
+        esp32_ip="http://192.168.1.195",
     ),
     CameraConfig(
         name="pi-vital5",
         pi_hostname="pi-vital5.local",
         save_root=_z_drive_path("pi5"),
-        esp32_ip="http://192.168.1.216",
+        esp32_ip="http://192.168.1.4",
     ),
 )
 
