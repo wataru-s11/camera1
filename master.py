@@ -52,24 +52,6 @@ def _resolve_input_folder() -> Path:
         )
         return processed_dirs[0]
 
-    dated_dirs = sorted(
-        (
-            path
-            for path in DEFAULT_INPUT_ROOT.iterdir()
-            if path.is_dir() and path.name[:8].isdigit()
-        ),
-        key=lambda path: path.name,
-        reverse=True,
-    )
-    if dated_dirs:
-        logging.getLogger(__name__).warning(
-            "*_processed フォルダが見つからないため %s を使用します", dated_dirs[0]
-        )
-        return dated_dirs[0]
-
-    raise FileNotFoundError(
-        "入力フォルダが見つかりません。REVIEW_INPUT_FOLDER を設定するか、"
-        f"{DEFAULT_INPUT_ROOT} に 日付フォルダ (例: 20250101_processed) を用意してください。"
     )
 
 
