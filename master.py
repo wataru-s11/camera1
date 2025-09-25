@@ -32,7 +32,6 @@ def _resolve_input_folder() -> Path:
 
     if not DEFAULT_INPUT_ROOT.exists():
         raise FileNotFoundError(
-            f"入力ルートが見つかりません。Z: ドライブの割当や NAS 接続を確認してください: {DEFAULT_INPUT_ROOT}"
         )
 
     today_suffix = datetime.now().strftime("%Y%m%d_processed")
