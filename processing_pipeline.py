@@ -63,6 +63,10 @@ class ReviewManager:
     )
     quit_keys: Sequence[str] = tuple(REVIEW_QUIT_KEYS)
     window_name: str = REVIEW_WINDOW_NAME
+    _destinations: dict[str, Path] = field(init=False, repr=False)
+    _key_bindings: dict[str, str] = field(init=False, repr=False)
+    _quit_keys: set[str] = field(init=False, repr=False)
+    _window_initialized: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.output_root = Path(self.output_root)
@@ -75,7 +79,6 @@ class ReviewManager:
         # Normalize keys for comparison
         self._key_bindings = {key.lower(): value for key, value in self.key_bindings.items()}
         self._quit_keys = {key.lower() for key in self.quit_keys}
-        self._window_initialized = False
 
     # -- convenience -----------------------------------------------------
     def bindings_description(self) -> str:
