@@ -46,6 +46,8 @@ def _resolve_input_folder() -> Path:
         )
         return processed_dirs[0]
 
+    raise FileNotFoundError(
+        "入力フォルダが見つかりません。REVIEW_INPUT_FOLDER を指定してください。"
     )
 
 
