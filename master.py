@@ -53,7 +53,10 @@ def _resolve_output_folder(override: Path | None = None) -> Path:
     return Path(os.environ.get("REVIEW_OUTPUT_ROOT", str(DEFAULT_OUTPUT_FOLDER)))
 
 
-def _resolve_input_folder(override: Path | None = None) -> Path:
+def _resolve_input_folder(
+    override: Path | None = None,
+    override_root: Path | None = None,
+) -> Path:
     if override is not None:
         override_path = Path(override)
         if not override_path.exists():
@@ -66,7 +69,17 @@ def _resolve_input_folder(override: Path | None = None) -> Path:
 
     logger = logging.getLogger(__name__)
 
-    default_roots = _default_input_root_candidates()
+    roots: tuple[Path, ...]
+    if override_root is not None:
+        roots = (Path(override_root),)
+    else:
+        env_root = os.environ.get("REVIEW_INPUT_ROOT")
+        if env_root:
+            roots = (Path(env_root),)
+        else:
+            roots = _default_input_root_candidates()
+
+    default_roots = roots
     for default_root in default_roots:
         if not default_root.exists():
             continue
@@ -117,13 +130,21 @@ def main() -> None:
         help="レビュー対象となる処理済み画像フォルダのパス。",
     )
     parser.add_argument(
+        "--input-root",
+        type=Path,
+        help=(
+            "処理済み画像フォルダが格納されたルートパス。"
+            "最新の日付フォルダを自動的に選択します。"
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         help="レビュー結果を書き出すフォルダのパス。",
     )
     args = parser.parse_args()
 
-    input_folder = _resolve_input_folder(args.input)
+    input_folder = _resolve_input_folder(args.input, args.input_root)
     output_folder = _resolve_output_folder(args.output)
 
     camera_id = os.environ.get("CAMERA_ID")
