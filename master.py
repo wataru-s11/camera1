@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 from datetime import datetime
@@ -21,11 +22,19 @@ DEFAULT_INPUT_ROOT = Path(r"C:\Users\sakai\OneDrive\Desktop\Raspi5\pi-vital2")
 DEFAULT_OUTPUT_FOLDER = Path(r"Z:\Raspi_face\cropped_face")
 
 
-def _resolve_output_folder() -> Path:
+def _resolve_output_folder(override: Path | None = None) -> Path:
+    if override is not None:
+        return Path(override)
     return Path(os.environ.get("REVIEW_OUTPUT_ROOT", str(DEFAULT_OUTPUT_FOLDER)))
 
 
-def _resolve_input_folder() -> Path:
+def _resolve_input_folder(override: Path | None = None) -> Path:
+    if override is not None:
+        override_path = Path(override)
+        if not override_path.exists():
+            raise FileNotFoundError(f"指定された入力フォルダが見つかりません: {override_path}")
+        return override_path
+
     env_input = os.environ.get("REVIEW_INPUT_FOLDER")
     if env_input:
         return Path(env_input)
@@ -75,8 +84,21 @@ def _resolve_input_folder() -> Path:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
-    input_folder = _resolve_input_folder()
-    output_folder = _resolve_output_folder()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--input",
+        type=Path,
+        help="レビュー対象となる処理済み画像フォルダのパス。",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="レビュー結果を書き出すフォルダのパス。",
+    )
+    args = parser.parse_args()
+
+    input_folder = _resolve_input_folder(args.input)
+    output_folder = _resolve_output_folder(args.output)
 
     camera_id = os.environ.get("CAMERA_ID")
     model, _ = load_yolo_model(camera_id)
