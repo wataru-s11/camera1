@@ -18,11 +18,33 @@ from processing_pipeline import (
 )
 
 # 既定の入出力パス
-DEFAULT_INPUT_ROOT_CANDIDATES: tuple[Path, ...] = (
+_STATIC_INPUT_ROOT_CANDIDATES: tuple[Path, ...] = (
     Path(r"Z:\\Raspi_face\\pi-vital2"),
     Path(r"C:\\Users\\sakai\\OneDrive\\Desktop\\Raspi5\\pi-vital2"),
 )
 DEFAULT_OUTPUT_FOLDER = Path(r"Z:\Raspi_face\cropped_face")
+
+
+def _default_input_root_candidates() -> tuple[Path, ...]:
+    """Generate candidate folders to search for processed images."""
+
+    dynamic_candidates = []
+    repo_root = Path(__file__).resolve().parent
+
+    for relative in ("pi-vital2", Path("data") / "pi-vital2"):
+        candidate = repo_root / relative
+        dynamic_candidates.append(candidate)
+
+    # Remove duplicates while preserving order
+    seen: set[Path] = set()
+    ordered_candidates: list[Path] = []
+    for path in (*_STATIC_INPUT_ROOT_CANDIDATES, *dynamic_candidates):
+        if path in seen:
+            continue
+        seen.add(path)
+        ordered_candidates.append(path)
+
+    return tuple(ordered_candidates)
 
 
 def _resolve_output_folder(override: Path | None = None) -> Path:
@@ -44,7 +66,8 @@ def _resolve_input_folder(override: Path | None = None) -> Path:
 
     logger = logging.getLogger(__name__)
 
-    for default_root in DEFAULT_INPUT_ROOT_CANDIDATES:
+    default_roots = _default_input_root_candidates()
+    for default_root in default_roots:
         if not default_root.exists():
             continue
 
@@ -77,7 +100,7 @@ def _resolve_input_folder(override: Path | None = None) -> Path:
             )
             return dated_dirs[0]
 
-    candidates = "\n".join(str(path) for path in DEFAULT_INPUT_ROOT_CANDIDATES)
+    candidates = "\n".join(str(path) for path in default_roots)
     raise FileNotFoundError(
         "入力フォルダが見つかりません。REVIEW_INPUT_FOLDER を設定するか、以下の候補のいずれかに日付フォルダ (例: 20250101_processed) を用意してください:\n"
         f"{candidates}"
