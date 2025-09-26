@@ -52,6 +52,32 @@ class ReviewAborted(Exception):
     """Raised when an operator chooses to abort the interactive review."""
 
 
+def _default_display_max_dimension() -> int | None:
+    raw_value = os.environ.get("FACE_REVIEW_MAX_DIM")
+    if raw_value is None:
+        return 800
+
+    env_value = raw_value.strip().lower()
+    if env_value in {"", "none", "auto"}:
+        return None
+
+    try:
+        parsed = int(env_value)
+    except ValueError:
+        logger.warning(
+            "Invalid FACE_REVIEW_MAX_DIM '%s'. Falling back to 800.", raw_value
+        )
+        return 800
+
+    if parsed <= 0:
+        logger.warning(
+            "FACE_REVIEW_MAX_DIM should be positive. Display scaling disabled."
+        )
+        return None
+
+    return parsed
+
+
 @dataclass(slots=True)
 class ReviewManager:
     """Stateful helper that manages review destinations and UI interactions."""
@@ -63,7 +89,7 @@ class ReviewManager:
     )
     quit_keys: Sequence[str] = tuple(REVIEW_QUIT_KEYS)
     window_name: str = REVIEW_WINDOW_NAME
-    display_max_dimension: int | None = 1200
+      
     _destinations: dict[str, Path] = field(init=False, repr=False)
     _key_bindings: dict[str, str] = field(init=False, repr=False)
     _quit_keys: set[str] = field(init=False, repr=False)
