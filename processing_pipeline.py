@@ -89,6 +89,9 @@ class ReviewManager:
     )
     quit_keys: Sequence[str] = tuple(REVIEW_QUIT_KEYS)
     window_name: str = REVIEW_WINDOW_NAME
+    display_max_dimension: int | None = field(
+        default_factory=_default_display_max_dimension
+    )
       
     _destinations: dict[str, Path] = field(init=False, repr=False)
     _key_bindings: dict[str, str] = field(init=False, repr=False)
