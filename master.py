@@ -193,6 +193,8 @@ def main() -> None:
     review_aborted = False
 
     if args.mode == "pipeline":
+        if not defer_review:
+            review_manager = ReviewManager(output_folder)
 
             review_manager = ReviewManager(output_folder)
 
