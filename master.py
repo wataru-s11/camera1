@@ -154,11 +154,6 @@ def main() -> None:
         help="レビュー結果を書き出すフォルダのパス。",
     )
     parser.add_argument(
-        "--continuous",
-        action="store_true",
-        help=(
-            "pipelineモード時に周期処理を止めずに継続します。"
-            "指定しない場合は1サイクルのみ実行します。"
         ),
     )
     args = parser.parse_args()
@@ -172,19 +167,20 @@ def main() -> None:
     review_aborted = False
 
     if args.mode == "pipeline":
+
         try:
             while True:
                 try:
                     run_cycle(
                         model,
                         review_manager,
-                        announce_sleep=args.continuous,
+
                     )
                 except ReviewAborted:
                     review_aborted = True
                     break
 
-                if not args.continuous:
+
                     break
 
                 time.sleep(CYCLE_INTERVAL_SECONDS)
