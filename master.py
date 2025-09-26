@@ -49,6 +49,23 @@ def _default_input_root_candidates() -> tuple[Path, ...]:
     return tuple(ordered_candidates)
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+
+    logging.getLogger(__name__).warning(
+        "Invalid boolean for %s: %r. Using default %s.", name, raw, default
+    )
+    return default
+
+
 def _resolve_output_folder(override: Path | None = None) -> Path:
     if override is not None:
         return Path(override)
@@ -158,17 +175,38 @@ def main() -> None:
         action="store_true",
         help="pipeline モードで 1 サイクルのみ実行します。",
     )
+    parser.add_argument(
+        "--defer-review",
+        action="store_true",
+        help=(
+            "pipeline モードでレビューを後回しにします。撮影とファイル転送のみを行い、"
+            "分類は review モードで実施してください。"
+        ),
+    )
     args = parser.parse_args()
 
     output_folder = _resolve_output_folder(args.output)
 
     camera_id = os.environ.get("CAMERA_ID")
-    model, _ = load_yolo_model(camera_id)
+    defer_review = args.defer_review
+    if args.mode == "pipeline" and not defer_review:
+        defer_review = _env_flag("PIPELINE_DEFER_REVIEW", False)
+        if defer_review:
+            logging.getLogger(__name__).info(
+                "PIPELINE_DEFER_REVIEW=1 → レビューを後回しにします"
+            )
 
-    review_manager = ReviewManager(output_folder)
+    requires_model = not (args.mode == "pipeline" and defer_review)
+    model = None
+    if requires_model:
+        model, _ = load_yolo_model(camera_id)
+
+    review_manager: ReviewManager | None = None
     review_aborted = False
 
     if args.mode == "pipeline":
+        if not defer_review:
+            review_manager = ReviewManager(output_folder)
 
         try:
             while True:
@@ -177,6 +215,7 @@ def main() -> None:
                         model,
                         review_manager,
                         announce_sleep=not args.once,
+                        defer_review=defer_review,
                     )
                 except ReviewAborted:
                     review_aborted = True
@@ -187,11 +226,14 @@ def main() -> None:
 
                 time.sleep(CYCLE_INTERVAL_SECONDS)
         finally:
-            review_manager.close()
+            if review_manager is not None:
+                review_manager.close()
 
         if review_aborted:
             print("[INFO] オペレータがレビューを中断しました。")
         return
+
+    review_manager = ReviewManager(output_folder)
 
     input_folder = _resolve_input_folder(args.input, args.input_root)
 
