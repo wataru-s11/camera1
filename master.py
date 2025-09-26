@@ -188,24 +188,14 @@ def main() -> None:
     output_folder = _resolve_output_folder(args.output)
 
     camera_id = os.environ.get("CAMERA_ID")
-    defer_review = args.defer_review
-    if args.mode == "pipeline" and not defer_review:
-        defer_review = _env_flag("PIPELINE_DEFER_REVIEW", False)
-        if defer_review:
-            logging.getLogger(__name__).info(
-                "PIPELINE_DEFER_REVIEW=1 → レビューを後回しにします"
-            )
-
-    requires_model = not (args.mode == "pipeline" and defer_review)
-    model = None
-    if requires_model:
-        model, _ = load_yolo_model(camera_id)
 
     review_manager: ReviewManager | None = None
     review_aborted = False
 
     if args.mode == "pipeline":
         if not defer_review:
+            review_manager = ReviewManager(output_folder)
+
             review_manager = ReviewManager(output_folder)
 
         try:
@@ -215,7 +205,7 @@ def main() -> None:
                         model,
                         review_manager,
                         announce_sleep=not args.once,
-                        defer_review=defer_review,
+
                     )
                 except ReviewAborted:
                     review_aborted = True
