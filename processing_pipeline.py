@@ -52,6 +52,32 @@ class ReviewAborted(Exception):
     """Raised when an operator chooses to abort the interactive review."""
 
 
+def _default_display_max_dimension() -> int | None:
+    raw_value = os.environ.get("FACE_REVIEW_MAX_DIM")
+    if raw_value is None:
+        return 800
+
+    env_value = raw_value.strip().lower()
+    if env_value in {"", "none", "auto"}:
+        return None
+
+    try:
+        parsed = int(env_value)
+    except ValueError:
+        logger.warning(
+            "Invalid FACE_REVIEW_MAX_DIM '%s'. Falling back to 800.", raw_value
+        )
+        return 800
+
+    if parsed <= 0:
+        logger.warning(
+            "FACE_REVIEW_MAX_DIM should be positive. Display scaling disabled."
+        )
+        return None
+
+    return parsed
+
+
 @dataclass(slots=True)
 class ReviewManager:
     """Stateful helper that manages review destinations and UI interactions."""
@@ -63,6 +89,9 @@ class ReviewManager:
     )
     quit_keys: Sequence[str] = tuple(REVIEW_QUIT_KEYS)
     window_name: str = REVIEW_WINDOW_NAME
+    display_max_dimension: int | None = field(
+        default_factory=_default_display_max_dimension
+    )
     _destinations: dict[str, Path] = field(init=False, repr=False)
     _key_bindings: dict[str, str] = field(init=False, repr=False)
     _quit_keys: set[str] = field(init=False, repr=False)
@@ -101,34 +130,57 @@ class ReviewManager:
     def _instruction_text(self) -> str:
         return "  ".join(f"[{key}] {label}" for key, label in self._key_bindings.items()) + "  [q] quit"
 
+    def _prepare_display_image(self, face: np.ndarray) -> tuple[np.ndarray, float]:
+        display_img = face.copy()
+        scale = 1.0
+
+        if self.display_max_dimension is not None:
+            height, width = display_img.shape[:2]
+            max_dim = max(height, width)
+            if max_dim > self.display_max_dimension:
+                scale = self.display_max_dimension / max_dim
+                new_size = (
+                    max(1, int(width * scale)),
+                    max(1, int(height * scale)),
+                )
+                interpolation = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+                display_img = cv2.resize(display_img, new_size, interpolation=interpolation)
+
+        return display_img, scale
+
     # -- public API -------------------------------------------------------
     def prompt(self, face: np.ndarray, base_name: str, idx: int, conf: float | None) -> str:
         """Show a face crop and wait for operator classification."""
 
         self._ensure_window()
-
+        display_img, scale = self._prepare_display_image(face)
         while True:
-            display_img = face.copy()
+            scaled_for_text = max(scale, 0.5)
+            font_scale = max(0.5, 0.6 * scale)
+            thickness = max(1, int(2 * scale))
+            line_height = int(25 * scaled_for_text)
+            y = int(30 * scaled_for_text)
+            text_overlay = display_img.copy()
             overlay_lines = [
                 f"{base_name} face#{idx}",
                 f"confidence: {conf:.2f}" if conf is not None else "confidence: n/a",
                 self._instruction_text(),
             ]
-            y = 30
             for line in overlay_lines:
                 cv2.putText(
-                    display_img,
+                    text_overlay,
                     line,
                     (10, y),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
+                    font_scale,
                     (0, 255, 0),
-                    2,
+                    thickness,
                     cv2.LINE_AA,
                 )
-                y += 25
+                y += line_height
 
-            cv2.imshow(self.window_name, display_img)
+            cv2.imshow(self.window_name, text_overlay)
+            cv2.resizeWindow(self.window_name, text_overlay.shape[1], text_overlay.shape[0])
             key = cv2.waitKey(0)
             if key < 0:
                 continue
