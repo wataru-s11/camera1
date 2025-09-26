@@ -158,17 +158,31 @@ def main() -> None:
         action="store_true",
         help="pipeline モードで 1 サイクルのみ実行します。",
     )
+    parser.add_argument(
+        "--defer-review",
+        action="store_true",
+        help=(
+            "pipeline モードでレビューを後回しにします。撮影とファイル転送のみを行い、"
+            "分類は review モードで実施してください。"
+        ),
+    )
     args = parser.parse_args()
 
     output_folder = _resolve_output_folder(args.output)
 
     camera_id = os.environ.get("CAMERA_ID")
-    model, _ = load_yolo_model(camera_id)
+    requires_model = not (args.mode == "pipeline" and args.defer_review)
+    model = None
+    if requires_model:
+        model, _ = load_yolo_model(camera_id)
 
-    review_manager = ReviewManager(output_folder)
+    review_manager: ReviewManager | None = None
     review_aborted = False
 
     if args.mode == "pipeline":
+
+        if not args.defer_review:
+            review_manager = ReviewManager(output_folder)
 
         try:
             while True:
@@ -177,6 +191,7 @@ def main() -> None:
                         model,
                         review_manager,
                         announce_sleep=not args.once,
+                        defer_review=args.defer_review,
                     )
                 except ReviewAborted:
                     review_aborted = True
@@ -187,11 +202,14 @@ def main() -> None:
 
                 time.sleep(CYCLE_INTERVAL_SECONDS)
         finally:
-            review_manager.close()
+            if review_manager is not None:
+                review_manager.close()
 
         if review_aborted:
             print("[INFO] オペレータがレビューを中断しました。")
         return
+
+    review_manager = ReviewManager(output_folder)
 
     input_folder = _resolve_input_folder(args.input, args.input_root)
 

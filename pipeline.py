@@ -47,16 +47,35 @@ CYCLE_INTERVAL_SECONDS = _env_interval("PIPELINE_INTERVAL_SECONDS", 1800)
 OUTPUT_ROOT = Path(os.environ.get("PIPELINE_OUTPUT_ROOT", str(DEFAULT_OUTPUT_ROOT)))
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    print(f"[WARN] Invalid boolean for {name}: {raw!r}. Using default {default}.")
+    return default
+
+
 def run_cycle(
-    model: "YOLO",
-    review_manager: ReviewManager,
+    model: "YOLO" | None,
+    review_manager: ReviewManager | None,
     *,
     announce_sleep: bool = True,
+    defer_review: bool = False,
 ) -> None:
     cycle_started = datetime.now()
     print(f"[INFO] Pipeline cycle started at {cycle_started:%Y-%m-%d %H:%M:%S}")
 
     ensure_save_directories(CAMERA_CONFIGS, cycle_started)
+
+    if defer_review:
+        print(
+            "[INFO] レビューを後回しにしています。必要になったら master.py --mode review で分類してください。"
+        )
 
     for config in CAMERA_CONFIGS:
         name = config.label()
@@ -68,6 +87,16 @@ def run_cycle(
 
         image_path = Path(result.image_path)
         lux_path = Path(result.lux_path)
+        if defer_review:
+            print(
+                "[INFO] レビュー保留: %s / 後で review モードで分類してください。" % image_path
+            )
+            print(f"[INFO] 参考: 照度ログ → {lux_path}")
+            continue
+
+        if model is None or review_manager is None:
+            raise RuntimeError("defer_review=False の場合、model と review_manager が必要です。")
+
         try:
             process_image(
                 image_path,
@@ -90,20 +119,32 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
     camera_id = os.environ.get("CAMERA_ID")
-    model, _ = load_yolo_model(camera_id)
-    review_manager = ReviewManager(OUTPUT_ROOT)
+    defer_review = _env_flag("PIPELINE_DEFER_REVIEW", False)
+
+    model = None
+    if not defer_review:
+        model, _ = load_yolo_model(camera_id)
+
+    review_manager: ReviewManager | None = None
+    if not defer_review:
+        review_manager = ReviewManager(OUTPUT_ROOT)
 
     try:
         while True:
             try:
-                run_cycle(model, review_manager)
+                run_cycle(
+                    model,
+                    review_manager,
+                    defer_review=defer_review,
+                )
             except ReviewAborted:
                 print("[INFO] オペレータがレビューを中断しました。")
                 break
 
             time.sleep(CYCLE_INTERVAL_SECONDS)
     finally:
-        review_manager.close()
+        if review_manager is not None:
+            review_manager.close()
 
 
 if __name__ == "__main__":
