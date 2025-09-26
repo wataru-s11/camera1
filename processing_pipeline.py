@@ -63,6 +63,7 @@ class ReviewManager:
     )
     quit_keys: Sequence[str] = tuple(REVIEW_QUIT_KEYS)
     window_name: str = REVIEW_WINDOW_NAME
+    display_max_dimension: int | None = 1200
     _destinations: dict[str, Path] = field(init=False, repr=False)
     _key_bindings: dict[str, str] = field(init=False, repr=False)
     _quit_keys: set[str] = field(init=False, repr=False)
@@ -101,34 +102,57 @@ class ReviewManager:
     def _instruction_text(self) -> str:
         return "  ".join(f"[{key}] {label}" for key, label in self._key_bindings.items()) + "  [q] quit"
 
+    def _prepare_display_image(self, face: np.ndarray) -> tuple[np.ndarray, float]:
+        display_img = face.copy()
+        scale = 1.0
+
+        if self.display_max_dimension is not None:
+            height, width = display_img.shape[:2]
+            max_dim = max(height, width)
+            if max_dim > self.display_max_dimension:
+                scale = self.display_max_dimension / max_dim
+                new_size = (
+                    max(1, int(width * scale)),
+                    max(1, int(height * scale)),
+                )
+                interpolation = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+                display_img = cv2.resize(display_img, new_size, interpolation=interpolation)
+
+        return display_img, scale
+
     # -- public API -------------------------------------------------------
     def prompt(self, face: np.ndarray, base_name: str, idx: int, conf: float | None) -> str:
         """Show a face crop and wait for operator classification."""
 
         self._ensure_window()
-
+        display_img, scale = self._prepare_display_image(face)
         while True:
-            display_img = face.copy()
+            scaled_for_text = max(scale, 0.5)
+            font_scale = max(0.5, 0.6 * scale)
+            thickness = max(1, int(2 * scale))
+            line_height = int(25 * scaled_for_text)
+            y = int(30 * scaled_for_text)
+            text_overlay = display_img.copy()
             overlay_lines = [
                 f"{base_name} face#{idx}",
                 f"confidence: {conf:.2f}" if conf is not None else "confidence: n/a",
                 self._instruction_text(),
             ]
-            y = 30
             for line in overlay_lines:
                 cv2.putText(
-                    display_img,
+                    text_overlay,
                     line,
                     (10, y),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
+                    font_scale,
                     (0, 255, 0),
-                    2,
+                    thickness,
                     cv2.LINE_AA,
                 )
-                y += 25
+                y += line_height
 
-            cv2.imshow(self.window_name, display_img)
+            cv2.imshow(self.window_name, text_overlay)
+            cv2.resizeWindow(self.window_name, text_overlay.shape[1], text_overlay.shape[0])
             key = cv2.waitKey(0)
             if key < 0:
                 continue
