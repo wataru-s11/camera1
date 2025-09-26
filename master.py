@@ -49,6 +49,23 @@ def _default_input_root_candidates() -> tuple[Path, ...]:
     return tuple(ordered_candidates)
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+
+    logging.getLogger(__name__).warning(
+        "Invalid boolean for %s: %r. Using default %s.", name, raw, default
+    )
+    return default
+
+
 def _resolve_output_folder(override: Path | None = None) -> Path:
     if override is not None:
         return Path(override)
@@ -171,17 +188,12 @@ def main() -> None:
     output_folder = _resolve_output_folder(args.output)
 
     camera_id = os.environ.get("CAMERA_ID")
-    requires_model = not (args.mode == "pipeline" and args.defer_review)
-    model = None
-    if requires_model:
-        model, _ = load_yolo_model(camera_id)
 
     review_manager: ReviewManager | None = None
     review_aborted = False
 
     if args.mode == "pipeline":
 
-        if not args.defer_review:
             review_manager = ReviewManager(output_folder)
 
         try:
@@ -191,7 +203,7 @@ def main() -> None:
                         model,
                         review_manager,
                         announce_sleep=not args.once,
-                        defer_review=args.defer_review,
+
                     )
                 except ReviewAborted:
                     review_aborted = True

@@ -38,5 +38,3 @@ python master.py
 ```powershell
 python master.py --mode pipeline --defer-review
 ```
-
-このモードでは撮影とファイル転送のみを行い、分類は `master.py --mode review` で後から実施してください。`pipeline.py` を直接実行する場合は、環境変数 `PIPELINE_DEFER_REVIEW=1` を設定すると同じ挙動になります。
