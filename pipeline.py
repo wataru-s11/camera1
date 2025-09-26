@@ -77,6 +77,8 @@ def run_cycle(
             "[INFO] レビューを後回しにしています。必要になったら master.py --mode review で分類してください。"
         )
 
+    capture_results: list[tuple[str, Path, Path]] = []
+
     for config in CAMERA_CONFIGS:
         name = config.label()
         try:
@@ -87,16 +89,21 @@ def run_cycle(
 
         image_path = Path(result.image_path)
         lux_path = Path(result.lux_path)
+        capture_results.append((name, image_path, lux_path))
+
         if defer_review:
             print(
                 "[INFO] レビュー保留: %s / 後で review モードで分類してください。" % image_path
             )
             print(f"[INFO] 参考: 照度ログ → {lux_path}")
-            continue
 
-        if model is None or review_manager is None:
-            raise RuntimeError("defer_review=False の場合、model と review_manager が必要です。")
+    if defer_review:
+        return
 
+    if model is None or review_manager is None:
+        raise RuntimeError("defer_review=False の場合、model と review_manager が必要です。")
+
+    for name, image_path, lux_path in capture_results:
         try:
             process_image(
                 image_path,
