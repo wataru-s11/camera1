@@ -192,10 +192,12 @@ def main() -> None:
     review_manager: ReviewManager | None = None
     review_aborted = False
 
+    defer_review = args.defer_review or _env_flag("PIPELINE_DEFER_REVIEW", False)
+    model = None
+
     if args.mode == "pipeline":
         if not defer_review:
-            review_manager = ReviewManager(output_folder)
-
+            model, _ = load_yolo_model(camera_id)
             review_manager = ReviewManager(output_folder)
 
         try:
@@ -205,7 +207,7 @@ def main() -> None:
                         model,
                         review_manager,
                         announce_sleep=not args.once,
-
+                        defer_review=defer_review,
                     )
                 except ReviewAborted:
                     review_aborted = True
@@ -223,6 +225,7 @@ def main() -> None:
             print("[INFO] オペレータがレビューを中断しました。")
         return
 
+    model, _ = load_yolo_model(camera_id)
     review_manager = ReviewManager(output_folder)
 
     input_folder = _resolve_input_folder(args.input, args.input_root)
