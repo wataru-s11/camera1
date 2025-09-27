@@ -31,10 +31,16 @@ python master.py
 
 いずれの方法でもフォルダが見つからない場合は、エラーメッセージに表示される候補パスのいずれかに日付フォルダを用意してください。
 
-### パイプラインモードでレビューを後回しにする
+### パイプラインモードのレビュー運用
 
-撮影を定期的に続けつつ、レビューは後からまとめて行いたい場合は `--defer-review` を利用します。
+`master.py --mode pipeline` は既定でレビューを後回しにし、撮影と転送だけを継続します。手が空いたタイミングで以下のようにレビューを実行してください。
 
 ```powershell
-python master.py --mode pipeline --defer-review
+python master.py --mode review --input "Z:\Raspi_face\pi-vital2\20250101"
+```
+
+撮影直後にレビューも同時に行いたい場合は `--review-now` オプションを付けてください。
+
+```powershell
+python master.py --mode pipeline --review-now
 ```

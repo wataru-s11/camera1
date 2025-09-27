@@ -79,6 +79,8 @@ def run_cycle(
 
     capture_results: list[tuple[str, Path, Path]] = []
 
+    review_folders: set[Path] = set()
+
     for config in CAMERA_CONFIGS:
         name = config.label()
         try:
@@ -91,6 +93,8 @@ def run_cycle(
         lux_path = Path(result.lux_path)
         capture_results.append((name, image_path, lux_path))
 
+        review_folders.add(image_path.parent)
+
         if defer_review:
             print(
                 "[INFO] レビュー保留: %s / 後で review モードで分類してください。" % image_path
@@ -98,6 +102,14 @@ def run_cycle(
             print(f"[INFO] 参考: 照度ログ → {lux_path}")
 
     if defer_review:
+        if review_folders:
+            print("[INFO] 後からレビューするフォルダの候補:")
+            for folder in sorted(review_folders):
+                print(f"        - {folder}")
+            print(
+                "[INFO] 例: python master.py --mode review --input "
+                "\"<上記のフォルダ>\""
+            )
         return
 
     if model is None or review_manager is None:
@@ -126,7 +138,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
     camera_id = os.environ.get("CAMERA_ID")
-    defer_review = _env_flag("PIPELINE_DEFER_REVIEW", False)
+    defer_review = _env_flag("PIPELINE_DEFER_REVIEW", True)
 
     model = None
     if not defer_review:
