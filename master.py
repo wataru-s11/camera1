@@ -175,14 +175,23 @@ def main() -> None:
         action="store_true",
         help="pipeline モードで 1 サイクルのみ実行します。",
     )
-    parser.add_argument(
+    review_mode = parser.add_mutually_exclusive_group()
+    review_mode.add_argument(
+        "--review-now",
+        dest="defer_review",
+        action="store_false",
+        help="pipeline モードで従来どおり撮影直後にFace Reviewを実施します。",
+    )
+    review_mode.add_argument(
         "--defer-review",
+        dest="defer_review",
         action="store_true",
         help=(
             "pipeline モードでレビューを後回しにします。撮影とファイル転送のみを行い、"
             "分類は review モードで実施してください。"
         ),
     )
+    parser.set_defaults(defer_review=None)
     args = parser.parse_args()
 
     output_folder = _resolve_output_folder(args.output)
@@ -192,7 +201,11 @@ def main() -> None:
     review_manager: ReviewManager | None = None
     review_aborted = False
 
-    defer_review = args.defer_review or _env_flag("PIPELINE_DEFER_REVIEW", False)
+    env_defer_review = _env_flag("PIPELINE_DEFER_REVIEW", True)
+    if args.defer_review is None:
+        defer_review = env_defer_review
+    else:
+        defer_review = args.defer_review
     model = None
 
     if args.mode == "pipeline":
