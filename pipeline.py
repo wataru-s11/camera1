@@ -14,8 +14,6 @@ from every1h_photo_lux import (
     ensure_save_directories,
 )
 from processing_pipeline import (
-    CAMERA_CROP_CONFIGS,
-    DEFAULT_CROP,
     ReviewAborted,
     ReviewManager,
     load_yolo_model,
@@ -122,8 +120,6 @@ def run_cycle(
                 model=model,
                 review_manager=review_manager,
                 lux_path=lux_path,
-                camera_crop_configs=CAMERA_CROP_CONFIGS,
-                default_crop=DEFAULT_CROP,
             )
         except ReviewAborted:
             raise

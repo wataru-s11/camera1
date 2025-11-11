@@ -11,8 +11,6 @@ from pathlib import Path
 
 from pipeline import CYCLE_INTERVAL_SECONDS, run_cycle
 from processing_pipeline import (
-    CAMERA_CROP_CONFIGS,
-    DEFAULT_CROP,
     ReviewAborted,
     ReviewManager,
     load_yolo_model,
@@ -248,8 +246,6 @@ def main() -> None:
             input_folder,
             model=model,
             review_manager=review_manager,
-            camera_crop_configs=CAMERA_CROP_CONFIGS,
-            default_crop=DEFAULT_CROP,
         )
     except ReviewAborted:
         review_aborted = True
