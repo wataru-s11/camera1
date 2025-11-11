@@ -15,23 +15,6 @@ from ultralytics import YOLO
 
 logger = logging.getLogger(__name__)
 
-# ========= クロップ設定 =========
-DEFAULT_CROP: tuple[int, int, int, int] = (1098, 50, 1843, 1789)
-CAMERA_CROP_CONFIGS: dict[str, tuple[int, int, int, int]] = {
-    # pi-vital2/pi2
-    "pi-vital2": (1098, 50, 1843, 1789),
-    "pi2": (1098, 50, 1843, 1789),
-    # pi-vital3/pi3
-    "pi-vital3": (748, 1008, 1533, 1454),
-    "pi3": (748, 1008, 1533, 1454),
-    # pi-vital4/pi4
-    "pi-vital4": (1918, 716, 1800, 1641),
-    "pi4": (1918, 716, 1800, 1641),
-    # pi-vital5/pi5
-    "pi-vital5": (475, 43, 2728, 2383),
-    "pi5": (475, 43, 2728, 2383),
-}
-
 # ========= レビュー設定 =========
 REVIEW_WINDOW_NAME = "Face Review"
 REVIEW_CATEGORIES: tuple[str, ...] = ("normal", "cyanosis", "controversial", "delete")
@@ -280,24 +263,6 @@ def safe_crop(img: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> np.ndarray
     return img[y1:y2, x1:x2]
 
 
-def resolve_crop_rect(
-    path: Path,
-    *,
-    camera_crop_configs: Mapping[str, tuple[int, int, int, int]] | None = None,
-    default_crop: tuple[int, int, int, int] | None = None,
-) -> tuple[int, int, int, int]:
-    if camera_crop_configs is None:
-        camera_crop_configs = CAMERA_CROP_CONFIGS
-    if default_crop is None:
-        default_crop = DEFAULT_CROP
-
-    path_lower = str(path).lower()
-    for key, rect in camera_crop_configs.items():
-        if key in path_lower:
-            return rect
-    return default_crop
-
-
 def determine_gamma_from_lux(lux_path: Path, base_name: str) -> float:
     gamma = 1.0
     if lux_path.exists():
@@ -419,8 +384,6 @@ def process_image(
     model: YOLO,
     review_manager: ReviewManager,
     lux_path: Path | None = None,
-    camera_crop_configs: Mapping[str, tuple[int, int, int, int]] | None = None,
-    default_crop: tuple[int, int, int, int] | None = None,
     cleanup_on_failure: bool = True,
 ) -> None:
     """Process a single captured image through gamma correction and YOLO review."""
@@ -440,16 +403,7 @@ def process_image(
         print(f"[WARN] 読み込み失敗: {img_path}")
         return
 
-    crop_x, crop_y, crop_w, crop_h = resolve_crop_rect(
-        img_path,
-        camera_crop_configs=camera_crop_configs,
-        default_crop=default_crop,
-    )
-
-    full = safe_crop(img, crop_x, crop_y, crop_x + crop_w, crop_y + crop_h)
-    if full is None:
-        print(f"[WARN] 全体クロップ範囲が不正: {img_path.name}")
-        return
+    full = img
 
     gamma = determine_gamma_from_lux(lux_path, base_name)
     full = gamma_correct(full, gamma)
@@ -516,8 +470,6 @@ def process_folder(
     *,
     model: YOLO,
     review_manager: ReviewManager,
-    camera_crop_configs: Mapping[str, tuple[int, int, int, int]] | None = None,
-    default_crop: tuple[int, int, int, int] | None = None,
     cleanup_on_failure: bool = True,
 ) -> None:
     """Process all JPG images in ``input_folder`` sequentially."""
@@ -544,8 +496,6 @@ def process_folder(
                 img_path,
                 model=model,
                 review_manager=review_manager,
-                camera_crop_configs=camera_crop_configs,
-                default_crop=default_crop,
                 cleanup_on_failure=cleanup_on_failure,
             )
         except ReviewAborted:
